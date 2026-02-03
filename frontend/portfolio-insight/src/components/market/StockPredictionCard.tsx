@@ -1,0 +1,148 @@
+import { Brain, TrendingUp, TrendingDown, AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PredictionChart } from '@/components/charts/PredictionChart';
+import { useStockPrediction, isPredictionSupported } from '@/hooks/useStockQuote';
+import { formatCurrency, formatPercent } from '@/utils/formatters';
+import { cn } from '@/lib/utils';
+
+interface StockPredictionCardProps {
+  ticker: string;
+  currentPrice: number;
+}
+
+const ConfidenceBadge = ({ score }: { score: number }) => {
+  const percentage = Math.round(score * 100);
+  
+  let colorClass = 'bg-destructive/10 text-destructive';
+  let label = 'Low';
+  
+  if (percentage >= 80) {
+    colorClass = 'bg-success/10 text-success';
+    label = 'High';
+  } else if (percentage >= 60) {
+    colorClass = 'bg-warning/10 text-warning';
+    label = 'Medium';
+  }
+  
+  return (
+    <span className={cn(
+      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+      colorClass
+    )}>
+      {label} ({percentage}%)
+    </span>
+  );
+};
+
+export const StockPredictionCard = ({ ticker, currentPrice }: StockPredictionCardProps) => {
+  const { data: prediction, isLoading, isError, error } = useStockPrediction(ticker);
+  
+  // Don't render if ticker doesn't support predictions
+  if (!isPredictionSupported(ticker)) {
+    return null;
+  }
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span className="text-sm text-muted-foreground">Loading AI prediction...</span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[200px] w-full mb-4" />
+          <Skeleton className="h-4 w-3/4 mb-2" />
+          <Skeleton className="h-4 w-1/2" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <Card className="border-destructive/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-destructive" />
+            <span>Prediction Unavailable</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            AI prediction service is currently unavailable. Please ensure the ML service is running.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!prediction) {
+    return null;
+  }
+
+  // Calculate predicted change
+  const lastForecastPrice = prediction.forecast[prediction.forecast.length - 1]?.price ?? currentPrice;
+  const predictedChange = lastForecastPrice - currentPrice;
+  const predictedChangePercent = (predictedChange / currentPrice) * 100;
+  const isPositive = predictedChange >= 0;
+
+  return (
+    <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-primary/10">
+              <Sparkles className="w-4 h-4 text-primary" />
+            </div>
+            <span>AI Price Forecast</span>
+          </CardTitle>
+          <ConfidenceBadge score={prediction.confidenceScore} />
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Prediction Chart */}
+        <PredictionChart 
+          currentPrice={currentPrice}
+          currentDate={prediction.lastObservedDate}
+          forecast={prediction.forecast}
+          height={180}
+        />
+
+        {/* Prediction Summary */}
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <div>
+            <p className="text-xs text-muted-foreground">7-Day Forecast</p>
+            <p className="text-lg font-semibold tabular-nums">
+              {formatCurrency(lastForecastPrice)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Predicted Change</p>
+            <p className={cn(
+              'text-sm font-medium flex items-center justify-end gap-1',
+              isPositive ? 'text-success' : 'text-destructive'
+            )}>
+              {isPositive ? (
+                <TrendingUp className="w-4 h-4" />
+              ) : (
+                <TrendingDown className="w-4 h-4" />
+              )}
+              {isPositive ? '+' : ''}{formatCurrency(predictedChange)} ({formatPercent(predictedChangePercent)})
+            </p>
+          </div>
+        </div>
+
+        {/* Disclaimer */}
+        <p className="text-[10px] text-muted-foreground/70 leading-tight">
+          Predictions generated by LSTM neural network trained on historical data. 
+          This is not financial advice. Past performance does not guarantee future results.
+        </p>
+      </CardContent>
+    </Card>
+  );
+};
